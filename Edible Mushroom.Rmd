@@ -1,0 +1,550 @@
+---
+title: "MATH 5743 : Statistical Learning"
+author: "Aimi Aqilah Mohd Zulkifli (201669666)"
+header-includes:
+- \usepackage{fancyhdr}
+- \usepackage{lipsum}
+- \pagestyle{fancy}
+- \lhead{Can I eat that mushroom?}
+output:
+  pdf_document:
+    df_print: kable
+    extra_dependencies: ["float"]
+    fig_caption: yes
+  word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, fig.align="center", fig.pos = "H", out.extra = "")
+```
+
+## Assessed Practical III : Can I eat that mushroom?
+
+Based on the given classic machine learning dataset called the "mushroom dataset", we will create logistic regression model, decision tree model and random forest model to determine whether a mushroom is edible from its characteristics. We will then make comparison between the three models and come out with the best model that could make the most accurate prediction.
+
+## The Data
+
+Firstly, we will load the data into our R (Table 1) to learn what information are available.
+```{r}
+# Load the mushroom dataset
+mushroom_data <- read.csv("/Users/amy/Documents/MATH5743/Practicals/Assessed Practical 3/mushrooms.csv")
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(kableExtra)
+kbl(head(mushroom_data), caption = "Visual and olfactory information of different specimens of gilled mushrooms") %>%
+  kable_styling(latex_options = c("hold_position"))
+```
+From the Table 1 above, we can see that the mushroom dataset is a collection of information about different types of gilled mushrooms. The dataset aims to determine if a mushroom is safe to eat or poisonous based on its characteristics. It includes details about the shape, surface texture, color, odor, and height of the mushroom. The dataset is labeled as either edible or poisonous mushroom. Before we analyse this dataset, we need to do data pre processing to ensure that this dataset is in a suitable format, free from inconsistencies, and properly prepared for training machine learning models.
+
+To pre process the data, we will first encode the categorical variables and handling the missing data. Encoding categorical variables involves converting non-numeric attributes like CapShape, CapSurface, CapColor, Odor, and Height into a numerical format suitable for machine learning algorithms. This can be done through a technique named label encoding (`as.factor`). Besides that, handling missing values is also important. Missing values in the dataset can be filled using strategies like mean, median, or mode imputation, or by removing rows or columns with missing values based on their impact and extent.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Check for missing values
+mushroom_data <- na.omit(mushroom_data)
+
+# Encode categorical variables
+mushroom_data$Edible <- as.factor(mushroom_data$Edible)
+mushroom_data$CapShape <- as.factor(mushroom_data$CapShape)
+mushroom_data$CapSurface <- as.factor(mushroom_data$CapSurface)
+mushroom_data$CapColor <- as.factor(mushroom_data$CapColor)
+mushroom_data$Odor <- as.factor(mushroom_data$Odor)
+mushroom_data$Height <- as.factor(mushroom_data$Height)
+```
+After we handled the missing values and encoded the categorical values, we need to check whether our data are completely converted into factor using `str()` function. The output are as below. We can see that all predictors are in a factor format.
+```{r, message=FALSE, warning=FALSE}
+str(mushroom_data)
+```
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mushroom_data2 <- mushroom_data
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+mushroom_data2$Edible <- as.numeric(mushroom_data2$Edible)
+mushroom_data2$CapShape <- as.numeric(mushroom_data2$CapShape)
+mushroom_data2$CapSurface <- as.numeric(mushroom_data2$CapSurface)
+mushroom_data2$CapColor <- as.numeric(mushroom_data2$CapColor)
+mushroom_data2$Odor <- as.numeric(mushroom_data2$Odor)
+mushroom_data2$Height <- as.numeric(mushroom_data2$Height)
+```
+
+```{r, echo=FALSE, results='hide', message=FALSE, warning=FALSE}
+str(mushroom_data2)
+```
+Before we proceed to analyse the dataset, we need to check the correlation between all predictors so that we can determine whether there is any multivollinearity in this dataset. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Calculate the correlation matrix
+correlation_matrix <- cor(mushroom_data2[, -1])  # Exclude the target variable from the correlation calculation
+
+# Print the correlation matrix
+library(kableExtra)
+kbl(correlation_matrix, caption = "Correlation Matrix") %>%
+  kable_styling(latex_options = c("hold_position"))
+
+# Visualize the correlation matrix using a heatmap
+library(ggplot2)
+library(reshape2)
+
+# Melt the correlation matrix for visualization
+melted_corr <- melt(correlation_matrix)
+
+# Create a heatmap using ggplot2
+ggplot(data = melted_corr, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "white", high = "blue") +
+  labs(x = "", y = "") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+```
+
+Based on the correlation table in Table 2, we can see that the correlation between predictors are not significant and this may indicates that there is no multicollinearity in this dataset. Hence, there is no necessity to do feature selection or dimensionality reduction in this dataset. 
+
+Once we done with the data pre processing, we can now split our data into train and test dataset using `caret` library (`createDataPartition`). Splitting the data into train and test sets is important before creating a prediction model. The training set is used to teach the model, while the test set is used to evaluate how well the model performs on unseen data. This helps us understand how well the model can make predictions in real-world situations. By having a separate test set, we can assess the model's ability to generalize and avoid overfitting, where the model becomes too specific to the training data and performs poorly on new data. 
+
+```{r, message=FALSE, warning=FALSE}
+# Split the data into training and testing sets
+library(caret)
+set.seed(167)  # Set a seed for reproducibility
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+
+```
+
+## The Models
+
+After completing the data pre-processing phase, our next step is to develop predictive models for the mushroom dataset. We will explore three different models: logistic regression, decision tree, and random forest. The objective is to assess the performance of each model and determine which one is capable of making more accurate predictions. By comparing the accuracy of these models, we can evaluate their effectiveness in classifying mushrooms as edible or poisonous based on the provided features.
+
+#### 1. Logistic Regression Model: 
+
+The first model that we create is the logistic regression model. Logistic regression allows us to estimate the probability of a mushroom being edible or poisonous based on the given features. It provides a straightforward and interpretable way to analyze the relationship between the predictors and the binary response variable. 
+\[
+P(y = 1 | \mathbf{x}) = \frac{1}{{1 + e^{-(\beta_0 + \beta_1 \text{{CapShape}} + \beta_2 \text{{CapSurface}} + \ldots + \beta_n \text{{Height}})}}} + \varepsilon
+\]
+
+Where:
+\(P(y = 1 | \mathbf{x})\) is the probability of the outcome being 1 given the input variables \(\mathbf{x}\),
+\(\beta_0\) is the intercept term,
+\(\text{{CapShape}}, \text{{CapSurface}}, \ldots, \text{{Height}}\) are the predictors,
+\(\varepsilon\) represents the noise term.
+
+
+In our approach to developing the logistic regression model, we will utilize the `glmnet` method. This method offers an efficient and effective way to perform logistic regression, especially when dealing with datasets that have a large number of features. To train the model, we will leverage the capabilities of the `caret` library, which provides a comprehensive toolkit for machine learning and predictive modeling.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(caret)
+library(glmnet)
+
+# Split the data into training and testing sets
+library(caret)
+set.seed(167)  # Set a seed for reproducibility
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+
+# Convert "Edible" to numeric binary format
+train_data$Edible <- ifelse(train_data$Edible == "Edible", 1, 0)
+```
+
+```{r, warning=FALSE}
+# Train the logistic regression model:
+logisticModel <- train(Edible ~ ., data = train_data, method = "glmnet", 
+                       trControl = trainControl(method = "cv", number = 5))
+```
+Once we have successfully trained our models using the training data, the next step is to utilize the trained models to predict the outcomes for the test data. This process allows us to evaluate the performance of our models on unseen data and assess their effectiveness in making accurate predictions. We will apply the trained models to the test data and calculate various performance metrics to quantify their predictive capabilities. These metrics include accuracy, which measures the overall correctness of the predictions, precision, which assesses the proportion of correctly predicted positive instances, recall, which gauges the ability to correctly identify positive instances, and F1 score, which provides a balanced measure of precision and recall. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Convert "Edible" in test data to numeric binary format
+test_data$Edible <- ifelse(test_data$Edible == "Edible", 1, 0)
+
+# Predict using the trained model on the test set:
+logisticPred <- predict(logisticModel, newdata = test_data)
+
+# Evaluate the performance of the model
+confusion_matrix <- table(test_data$Edible, ifelse(logisticPred >= 0.5, "Edible", "Poisonous"))
+confusion_matrix
+
+# Calculate accuracy
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+print(paste("Accuracy:", accuracy))
+
+# Calculate precision
+precision <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+print(paste("Precision:", precision))
+
+# Calculate recall
+recall <- confusion_matrix[1, 1] / sum(confusion_matrix[1, ])
+print(paste("Recall:", recall))
+
+# Calculate F1-score
+f1_score <- 2 * (precision * recall) / (precision + recall)
+print(paste("F1-score:", f1_score))
+```
+Based on the model's output above, we can see that the logistic regression model achieved a very low accuracy of 0.016 when predicting the outcomes using the test data. This means that the model made incorrect predictions for the vast majority of cases. To improve its performance, we will conduct hyperparameter tuning using the `trainControl` function. This involves adjusting the settings of the logistic regression model to find the best combination of parameters that will maximize its predictive accuracy. By fine-tuning the model in this way, we hope to significantly improve its ability to accurately predict the desired outcomes.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(caret)
+library(glmnet)
+
+# Split the data into training and testing sets
+library(caret)
+set.seed(167)  # Set a seed for reproducibility
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+
+# Perform exploratory data analysis and select relevant features
+selected_features <- c("CapShape", "CapSurface", "CapColor", "Odor", "Height")
+train_data_selected <- train_data[, c("Edible", selected_features)]
+test_data_selected <- test_data[, c("Edible", selected_features)]
+
+# Convert "Edible" to numeric binary format
+train_data_selected$Edible <- ifelse(train_data_selected$Edible == "Edible", 1, 0)
+test_data_selected$Edible <- ifelse(test_data_selected$Edible == "Edible", 1, 0)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# Hyperparameter Tuning
+# Create a grid of hyperparameters to search over
+hyperparameters <- expand.grid(lambda = seq(0, 1, 0.1), alpha = seq(0, 1, 0.1))
+
+# Train and tune the logistic regression model using cross-validation
+logisticModel <- train(
+  Edible ~ .,
+  data = train_data_selected,
+  method = "glmnet",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = hyperparameters
+)
+
+# Get the best hyperparameters
+best_lambda <- logisticModel$bestTune$lambda
+best_alpha <- logisticModel$bestTune$alpha
+
+# Retrain the logistic regression model with the best hyperparameters
+final_logisticModel <- glmnet(
+  as.matrix(train_data_selected[, -1]),
+  train_data_selected$Edible,
+  family = "binomial",
+  alpha = best_alpha,
+  lambda = best_lambda
+)
+```
+
+```{r,results='hide', echo=FALSE, message=FALSE, warning=FALSE}
+# Convert relevant variables to numeric format
+test_data_selected$CapShape <- as.numeric(as.factor(test_data_selected$CapShape))
+test_data_selected$CapSurface <- as.numeric(as.factor(test_data_selected$CapSurface))
+test_data_selected$CapColor <- as.numeric(as.factor(test_data_selected$CapColor))
+test_data_selected$Odor <- as.numeric(as.factor(test_data_selected$Odor))
+test_data_selected$Height <- as.numeric(as.factor(test_data_selected$Height))
+
+# Make predictions on the test dataset
+logisticPred <- predict(final_logisticModel, newx = as.matrix(test_data_selected[, -1]), s = best_lambda, type = "response")
+
+# Convert predictions to categorical labels
+logisticPred_labels <- ifelse(logisticPred >= 0.5, "Edible", "Poisonous")
+
+# Evaluate the performance of the model
+confusion_matrix <- table(test_data_selected$Edible, logisticPred_labels)
+accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+precision <- confusion_matrix[1, 1] / sum(confusion_matrix[, 1])
+recall <- confusion_matrix[1, 1] / sum(confusion_matrix[1, ])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print the performance metrics
+cat("Confusion Matrix:\n", confusion_matrix, "\n")
+cat("Accuracy:", accuracy, "\n")
+cat("Precision:", precision, "\n")
+cat("Recall:", recall, "\n")
+cat("F1-score:", f1_score, "\n")
+```
+```{r, echo=FALSE}
+# Create a data frame with the before and after tuning results
+resultslog <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1-score"),
+  Before_Tuning = c(0.0160098522167488, 0.0299769408147579, 0.0332197614991482, 0.0315151515151515),
+  After_Tuning = c(0.4819376, 0.4819376, 1, 0.6504155)
+)
+library(kableExtra)
+kbl(resultslog, caption = "Logistic Regression Model Performance Metric Before and After Tuning") %>%
+  kable_styling(latex_options = c("hold_position"))
+```
+
+According to Table 3, it seems that after performing feature selection and hyperparameter tuning, the results have improved significantly. The model's accuracy has increased from 0.016 to 0.482, indicating a much better predictive performance. The precision has also improved to 0.482, meaning that a higher proportion of predicted edible mushrooms are actually edible. The recall has reached 1, indicating that all the actual edible mushrooms in the test set are correctly classified as edible. Finally, the F1-score has improved to 0.650, which is a balanced measure of precision and recall. These improvements demonstrate the effectiveness of feature selection and hyperparameter tuning in enhancing the performance of the logistic regression model. 
+
+#### 2. Decision Tree Model :
+
+After completing the logistic regression model, we will proceed to develop a decision tree model for our mushroom dataset. The decision tree algorithm is chosen as it offers several advantages that complement the logistic regression approach. Decision trees provide a transparent and interpretable model, making it easier to understand and explain the decision-making process. They are capable of handling both categorical and numerical predictors, which is well-suited for our dataset with categorical attributes such as CapShape, CapSurface, and others. Decision trees can capture non-linear relationships and interactions between variables, enabling the detection of complex patterns and decision rules. 
+
+We will utilize the `rpart` algorithm to develop the decision tree model for our mushroom dataset. The `rpart` package in R provides a robust implementation of decision trees. Once the model is constructed, we will train it using the train data utilizing the `caret` library. This process involves optimizing the decision tree's parameters to improve its predictive performance. After training, we will employ the predict function to generate predictions on the test data. To evaluate the performance of the decision tree model, we will assess several performance metrics, including accuracy, precision, recall, and F1 score. These metrics will provide insights into the model's ability to correctly classify mushrooms as edible or poisonous.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(rpart.plot)
+library(caret)
+
+# Split the data into training and testing sets
+set.seed(167)
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+```
+
+```{r}
+library(rpart)
+
+# Train the decision tree model
+decisionTreeModel <- rpart(Edible ~ ., data = train_data, method = "class")
+```
+
+```{r,results='hide', echo=FALSE, message=FALSE, warning=FALSE}
+# Predict using the trained model on the test set
+decisionTreePred <- predict(decisionTreeModel, newdata = test_data, type = "class")
+
+# Create confusion matrix
+cm <- table(decisionTreePred, test_data$Edible)
+
+# Calculate evaluation metrics
+accuracy <- sum(diag(cm)) / sum(cm)
+precision <- cm["Edible", "Edible"] / sum(cm[, "Edible"])
+recall <- cm["Edible", "Edible"] / sum(cm["Edible", ])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+# Print the evaluation metrics
+print(paste("Accuracy:", accuracy))
+print(paste("Precision:", precision))
+print(paste("Recall:", recall))
+print(paste("F1-score:", f1_score))
+```
+After obtaining the initial performance metric results of the decision tree model, we will proceed with the crucial step of hyperparameter tuning to further improve its predictive capabilities. In this tuning phase, we will utilize a manual approach by defining the control parameters for the `rpart` algorithm. The control parameters, such as `minsplit`, `minbucket`, `maxdepth`, and `cp`, play a significant role in shaping the decision tree model's structure and complexity. By adjusting these parameters, we aim to optimize the model's performance. Once the manual hyperparameter tuning is completed, we will re-evaluate the model's performance by conducting predictions on the test data. This will allow us to compare the updated performance metrics, including accuracy, precision, recall, and F1 score, with the results obtained before the tuning process.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Split the data into training and testing sets
+set.seed(167)
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+```
+```{r}
+# Define the control parameters for tuning
+control <- rpart.control(minsplit = 4, minbucket = round(5 / 3), maxdepth = 3, cp = 0)
+
+# Tune the decision tree model
+tune.fit <- rpart(Edible ~ ., data = train_data, method = 'class', control = control)
+```
+
+```{r,results='hide', echo=FALSE, message=FALSE, warning=FALSE}
+# Function to calculate accuracy on test data
+accuracy.tune <- function(dtree, test_data) {
+  pred.dtree <- predict(dtree, test_data, type = 'class')
+  table_mat <- table(test_data$Edible, pred.dtree)
+  accuracy.test <- sum(diag(table_mat)) / sum(table_mat)
+  accuracy.test
+}
+
+# Calculate accuracy on test data using the tuned model
+accuracyDT <- accuracy.tune(tune.fit, test_data)
+
+# Function to calculate precision, recall, and F1-score
+evaluate_model <- function(predictions, actual) {
+  confusion_matrix <- table(actual, predictions)
+  
+  # Calculate true positives, false positives, and false negatives
+  TP <- confusion_matrix[2, 2]
+  FP <- confusion_matrix[1, 2]
+  FN <- confusion_matrix[2, 1]
+  
+  # Calculate precision
+  precision <- TP / (TP + FP)
+  
+  # Calculate recall
+  recall <- TP / (TP + FN)
+  
+  # Calculate F1-score
+  f1_score <- 2 * (precision * recall) / (precision + recall)
+  
+  # Return precision, recall, and F1-score
+  return(list(precision = precision, recall = recall, f1_score = f1_score))
+}
+
+# Tune the decision tree model
+tune.fit <- rpart(Edible ~ ., data = train_data, method = 'class', control = control)
+
+# Use the tuned model for prediction
+predictions <- predict(tune.fit, newdata = test_data, type = 'class')
+
+# Calculate precision, recall, and F1-score
+evaluation <- evaluate_model(predictions, test_data$Edible)
+
+# Print the precision, recall, and F1-score
+print(paste("Accuracy:", accuracyDT))
+print(paste("Precision:", evaluation$precision))
+print(paste("Recall:", evaluation$recall))
+print(paste("F1-score:", evaluation$f1_score))
+```
+```{r, echo=FALSE}
+# Create a data frame with the before and after tuning results
+resultsDT <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1-score"),
+  Before_Tuning = c(0.982758620689655, 1, 0.967791411042945, 0.983632112236945),
+  After_Tuning = c(0.986042692939245, 1, 0.971039182282794, 0.985306828003457)
+)
+
+library(kableExtra)
+kbl(resultsDT, caption = "Decision Tree Model Performance Metric Before and After Tuning") %>%
+  kable_styling(latex_options = c("hold_position"))
+```
+Based on Table 4, we can see both the original and tuned decision tree models performed exceptionally well in classifying mushrooms as edible or poisonous. The original model achieved an accuracy of 98.28%, with a perfect precision of 100% and a recall of 96.78%. The F1-score, combining precision and recall, was 98.36%. After tuning, the model's performance improved slightly, with an accuracy of 98.60%, maintaining a perfect precision of 100%. The tuned model showed a higher recall of 97.10%, indicating better identification of edible mushrooms, while maintaining a high overall F1-score of 98.53%. Overall, both models demonstrated excellent predictive capability, with the tuned model showing a slight enhancement in correctly identifying edible mushrooms.
+
+#### 3. Random Forest Model : 
+After successfully completing the logistic regression and decision tree models, our next objective is to develop a random forest model. The decision to employ a random forest model stems from its inherent strengths and advantages. Random forests are an ensemble learning method that combines multiple decision trees to generate more robust and accurate predictions. By leveraging the power of ensemble learning, random forests can mitigate overfitting and improve generalization performance. Additionally, random forests can handle both numerical and categorical predictors, making them suitable for our mushroom dataset, which contains various categorical attributes. Furthermore, random forests offer the ability to assess feature importance, enabling us to identify the most influential variables in predicting the edibility of mushrooms. 
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+
+library(caret)
+
+# Split the data into training and testing sets
+set.seed(167)
+train_indices <- createDataPartition(mushroom_data$Edible, p = 0.7, list = FALSE)
+train_data <- mushroom_data[train_indices, ]
+test_data <- mushroom_data[-train_indices, ]
+```
+To accomplish this, we will utilize the `randomForest` library, a powerful tool for constructing random forest models in R. Following the data preprocessing steps, we will train the model using the `caret` package, which provides a comprehensive framework for machine learning workflows. Once the model is trained, we will utilize the predict function to generate predictions on the test data. By evaluating the performance of the random forest model, we will calculate important metrics such as accuracy, precision, recall, and F1 score, which will enable us to assess its predictive capabilities. 
+```{r, message=FALSE, warning=FALSE}
+library(randomForest)
+
+# Train the random forest model
+randomForestModel <- randomForest(Edible ~ ., data = train_data, ntree = 500)
+```
+
+```{r, results='hide', echo=FALSE, message=FALSE, warning=FALSE}
+# Predict using the trained model on the test set
+randomForestPred <- predict(randomForestModel, newdata = test_data, type = "class")
+
+# Evaluate the performance of the model
+confusionMatrix(randomForestPred, test_data$Edible)
+```
+After obtaining the initial performance metric results of the random forest model, our focus turns towards enhancing its predictive performance through hyperparameter tuning. To accomplish this, we will employ the `trainControl` function to configure the tuning process. Specifically, we will tune the parameter `.mtry` to optimize the model's performance. By varying the number of features considered at each split, we can identify the optimal value that maximizes predictive accuracy. Utilizing the train function from the caret package, we will train the random forest model on the training data, taking into account the defined tuning grid. The `trainControl` function will implement a cross-validation strategy with 5 folds to ensure robust evaluation. After completing the hyperparameter tuning process, we will once again generate predictions on the test data. By calculating the performance metrics, including accuracy, precision, recall, and F1 score, we can compare the results obtained after hyperparameter tuning with the initial results. 
+```{r,results='hide', message=FALSE, warning=FALSE}
+# Tune the random forest model for better performance
+tunedRandomForestModel <- train(
+  Edible ~ .,
+  data = train_data,
+  method = "rf",
+  trControl = trainControl(method = "cv", number = 5),
+  tuneGrid = expand.grid(.mtry = 1:10)
+)
+
+# Obtain the best mtry value
+bestMtry <- tunedRandomForestModel$bestTune$mtry
+
+# Create the best random forest model using the best mtry value
+bestRandomForestModel <- randomForest(Edible ~ ., data = train_data, mtry = bestMtry, ntree = 500)
+
+# Repeat the prediction and evaluation steps with the tuned model
+tunedRandomForestPred <- predict(bestRandomForestModel, newdata = test_data, type = "class")
+
+```
+```{r, echo=FALSE,results='hide', message=FALSE, warning=FALSE}
+# Evaluate performance metrics for the random forest model before tuning
+print("Random Forest Model - Before Tuning:")
+accuracy_before <- sum(randomForestPred == test_data$Edible) / length(test_data$Edible)
+precision_before <- sum(randomForestPred[test_data$Edible == "Edible"] == "Edible") / sum(randomForestPred == "Edible")
+recall_before <- sum(randomForestPred[test_data$Edible == "Edible"] == "Edible") / sum(test_data$Edible == "Edible")
+f1_score_before <- 2 * precision_before * recall_before / (precision_before + recall_before)
+print(paste("Accuracy: ", accuracy_before))
+print(paste("Precision: ", precision_before))
+print(paste("Recall: ", recall_before))
+print(paste("F1-score: ", f1_score_before))
+
+# Evaluate performance metrics for the tuned random forest model
+print("Random Forest Model - After Tuning:")
+accuracy_after <- sum(tunedRandomForestPred == test_data$Edible) / length(test_data$Edible)
+precision_after <- sum(tunedRandomForestPred[test_data$Edible == "Edible"] == "Edible") / sum(tunedRandomForestPred == "Edible")
+recall_after <- sum(tunedRandomForestPred[test_data$Edible == "Edible"] == "Edible") / sum(test_data$Edible == "Edible")
+f1_score_after <- 2 * precision_after * recall_after / (precision_after + recall_after)
+print(paste("Accuracy: ", accuracy_after))
+print(paste("Precision: ", precision_after))
+print(paste("Recall: ", recall_after))
+print(paste("F1-score: ", f1_score_after))
+
+```
+```{r, echo=FALSE}
+# Create a data frame with the before and after tuning results
+resultsRF <- data.frame(
+  Metric = c("Accuracy", "Precision", "Recall", "F1-score"),
+  Before_Tuning = c(0.989326765188834, 0.980559875583204, 0.9992076069730595, 0.989795918367347),
+  After_Tuning = c(0.990968801313629,0.987421383647799, 0.995245641838352, 0.991318074191002)
+)
+
+library(kableExtra)
+kbl(resultsRF, caption = "Random Forest Model Performance Metric Before and After Tuning") %>%
+  kable_styling(latex_options = c("hold_position"))
+```
+Table 5 shows the random forest model, both before and after tuning, demonstrates excellent performance in predicting mushroom edibility. However, after tuning, we observe slight improvements in accuracy, precision, and F1-score for the model. The tuned model achieves a slightly higher accuracy of 99.10% compared to 98.93% in the original model. Additionally, the precision of the tuned model increases to 98.74% from 98.06%, indicating its improved ability to correctly identify edible mushrooms. Although the recall remains high for both models (99.92% and 99.52% for the original and tuned models, respectively), the tuned model strikes a better balance between accuracy and completeness. Overall, the tuned random forest model showcases subtle enhancements in performance metrics, reinforcing its effectiveness in distinguishing between edible and poisonous mushrooms.
+
+## Model Selection : The Best Model
+
+In order to select the best model for predicting the edibility of mushrooms, we will compile and compare all the performance metrics of each model. By considering metrics such as accuracy, precision, recall, and F1 score, we can comprehensively assess the predictive capabilities of each model. Accuracy reflects the overall correctness of predictions, precision measures the proportion of true positives among predicted positives, recall captures the ability to identify true positives from all actual positives, and F1 score provides a balanced measure of precision and recall. By examining these metrics for each model, we can gain insights into their respective strengths and weaknesses.
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+# Load the required libraries
+library(knitr)
+library(kableExtra)
+
+# Create a data frame with the performance results
+results <- data.frame(
+  Model = c("Logistic Regression", "Decision Tree", "Random Forest"),
+  Accuracy = c(0.4819376, 0.986042692939245, 0.990968801313629),
+  Precision = c(0.4819376, 1, 0.987421383647799),
+  Recall = c(1, 0.971039182282794, 0.995245641838352),
+  F1_Score = c(0.6504155, 0.985306828003457, 0.991318074191002)
+)
+
+kbl(results, caption = "Performance Metric Results for All Models") %>%
+  kable_styling(latex_options = c("hold_position"))
+```
+
+Considering the results in Table 6, both the Decision Tree and Random Forest models exhibit superior predictive capabilities compared to the Logistic Regression model. The Decision Tree model demonstrates high accuracy and precision, indicating that it can accurately classify edible and poisonous mushrooms. Additionally, the model achieves a high recall score, suggesting that it effectively identifies edible mushrooms among the dataset. The Random Forest model performs even better, demonstrating a balanced combination of high accuracy, precision, recall, and F1 score. This indicates that the Random Forest model is capable of accurate classification while maintaining a good balance between precision and recall. However, it is important to see whether the differences between Decision Tree model and Random Forest model is significant or not.
+
+In order to determine if there are statistically significant differences between the F1 scores of the Decision Tree and Random Forest models, we conducted a one-way ANOVA test. The coding for this test was performed using the formula `aov` function, where the F1 scores were compared based on the different models. Performing an ANOVA test helps us assess the statistical significance of the observed differences between the Decision Tree and Random Forest models, enabling us to make informed conclusions about the performance disparities between the two models based on their F1 scores.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# F1-scores of the decision tree and random forest models before and after tuning
+dt_f1_scores_before <- c(0.983632112236945)
+dt_f1_scores_after <- c(0.985306828003457)
+rf_f1_scores_before <- c(0.989795918367347)
+rf_f1_scores_after <- c(0.991318074191002)
+
+# Create a data frame with F1-scores for ANOVA
+f1_scores <- data.frame(
+  Model = rep(c("Decision Tree", "Random Forest"), each = 2),
+  F1_Score = c(dt_f1_scores_before, dt_f1_scores_after, rf_f1_scores_before, rf_f1_scores_after)
+)
+```
+```{r, message=FALSE, warning=FALSE}
+# Perform one-way ANOVA
+anova_result <- aov(F1_Score ~ Model, data = f1_scores)
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Print the ANOVA table
+cat("One-way ANOVA results:\n")
+print(summary(anova_result))
+
+# Extract p-value from ANOVA results
+p_value_anova <- summary(anova_result)[[1]]$`Pr(>F)`[[1]]
+```
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+# Print the p-value and interpretation
+cat("p-value:", p_value_anova, "\n")
+
+if (p_value_anova < 0.05) {
+  cat("There is a significant difference in F1-scores between Decision Tree model and Random Forest model.\n")
+} else {
+  cat("There is no significant difference in F1-scores between Decision Tree model and Random Forest model.\n")
+}
+
+```
+The result of the ANOVA test indicates a p-value of 0.03285802, suggesting a significant difference in the F1 scores between the Decision Tree and Random Forest models. This significant difference highlights the importance of model selection when predicting the edibility of mushrooms. The significance of this difference implies that the choice of model significantly affects the predictive performance, as measured by the F1 score. It indicates that the Random Forest model, with its superior F1 score, demonstrates better overall performance compared to the Decision Tree model.
+
+## Conclusion
+
+Based on the evaluation of multiple performance metrics, including accuracy, precision, recall, and F1 score, as well as the results of the ANOVA test, we can confidently conclude that the Random Forest model outperforms both the Logistic Regression and Decision Tree models in predicting the edibility of mushrooms. The Random Forest model exhibits higher accuracy, precision, recall, and F1 score, indicating its ability to make more accurate and reliable predictions.
+
+The Random Forest model's superiority can be attributed to its ensemble approach, which combines multiple decision trees and utilizes their collective wisdom to improve predictive accuracy. By leveraging the strength of numerous individual trees and reducing the risk of overfitting, the Random Forest model achieves better generalization and robustness in capturing the complex relationships within the mushroom dataset. Therefore, considering the statistically significant differences and the superior performance in various metrics, we confidently recommend the Random Forest model as the best choice for predicting the edibility of mushrooms in this dataset.
+
