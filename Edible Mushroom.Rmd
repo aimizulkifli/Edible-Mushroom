@@ -1,6 +1,6 @@
 ---
 title: "MATH 5743 : Statistical Learning"
-author: "Aimi Aqilah Mohd Zulkifli (201669666)"
+author: "Aimi Aqilah Mohd Zulkifli"
 header-includes:
 - \usepackage{fancyhdr}
 - \usepackage{lipsum}
